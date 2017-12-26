@@ -25,6 +25,8 @@ import re
 import base64
 from array import array
 import ctypes
+import pytz
+from pytz import reference
 
 if sys.version >= "3":
     long = int
@@ -190,14 +192,20 @@ class TimestampType(AtomicType):
 
     def toInternal(self, dt):
         if dt is not None:
-            seconds = (calendar.timegm(dt.utctimetuple()) if dt.tzinfo
-                       else time.mktime(dt.timetuple()))
+            dt_tz = dt if dt.tzinfo else dt.replace(tzinfo=getTimezone())
+            seconds = calendar.timegm(dt_tz.utctimetuple())
             return int(seconds) * 1000000 + dt.microsecond
 
     def fromInternal(self, ts):
         if ts is not None:
             # using int to avoid precision loss in float
-            return datetime.datetime.fromtimestamp(ts // 1000000).replace(microsecond=ts % 1000000)
+            dt = datetime.datetime.utcfromtimestamp(ts // 1000000).replace(microsecond=ts % 1000000)
+            return dt.replace(tzinfo=pytz.utc).astimezone(getTimezone())
+
+    def getTimezone(self):
+        sc = SparkContext._active_spark_context
+        timezone = sc.getConf("spark.sql.session.timeZone")
+        return pytz.timezone(timezone)
 
 
 class DecimalType(FractionalType):
